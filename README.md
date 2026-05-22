@@ -1,33 +1,33 @@
 # Amoeba Segmentation Morphology
 
-Pipeline de procesamiento de imagen para segmentar amebas en micrografias. El proyecto combina filtros morfologicos, filtrado en frecuencia, watershed por islas y una segunda etapa de clasificacion por objeto con un modelo Hybrid LVQ.
+Image processing pipeline for amoeba segmentation in microscopy images. The project combines morphological filters, frequency-domain filtering, island-based watershed separation, and a second object-level classification stage with a Hybrid LVQ model.
 
-## Vista rapida
+## Preview
 
-| Imagen original | Imagen procesada |
+| Original image | Processed image |
 | --- | --- |
-| ![Ameba original](images1/amoeba_0001.jpg) | ![Ameba procesada](processed_images/amoeba_0001_procesada.jpg) |
+| ![Original amoeba](images1/amoeba_0001.jpg) | ![Processed amoeba](processed_images/amoeba_0001_procesada.jpg) |
 
-## Contexto
+## Context
 
-Este repositorio esta preparado para subir a GitHub como material de apoyo para el congreso SOMIB. El codigo y los ejemplos documentan el flujo usado para segmentacion de amebas en imagenes de microscopia.
+This repository is prepared for publication on GitHub as supporting material for the SOMIB conference. The code and examples document the workflow used for amoeba segmentation in microscopy images.
 
-## Que incluye
+## Contents
 
-- `Metodo_SOMIB.py`: pipeline principal de segmentacion, filtros adaptativos, diagnostico de imagen, mascara candidata y separacion con watershed.
-- `etiquetar_regiones_carpeta.py`: interfaz interactiva para etiquetar regiones candidatas como `ameba` o `no_ameba`.
-- `Segmentacion_con_filtro.py`: utilidades de entrenamiento, extraccion de caracteristicas por objeto, Hybrid LVQ y aplicacion de la segunda red.
-- `images1/`: imagenes de ejemplo.
-- `processed_images/`: resultados procesados de ejemplo.
-- `modelo_hlvq_SOMIB.pkl`: modelo entrenado incluido como referencia para los experimentos preparados para SOMIB.
+- `Metodo_SOMIB.py`: main segmentation pipeline, adaptive filters, image diagnostics, candidate mask generation, and watershed separation.
+- `etiquetar_regiones_carpeta.py`: interactive interface for labeling candidate regions as `amoeba` or `non_amoeba`.
+- `Segmentacion_con_filtro.py`: training utilities, object-level feature extraction, Hybrid LVQ, and second-stage classifier application.
+- `images1/`: sample input images.
+- `processed_images/`: sample processed outputs.
+- `modelo_hlvq_SOMIB.pkl`: trained model included as a reference for the experiments prepared for SOMIB.
 
-## Requisitos
+## Requirements
 
-- Python 3.10 o superior recomendado.
-- Linux, macOS o Windows con soporte para ventanas graficas si se usara la herramienta interactiva de etiquetado.
-- Dependencias listadas en `requirements.txt`.
+- Python 3.10 or newer is recommended.
+- Linux, macOS, or Windows with graphical window support if the interactive labeling tool will be used.
+- Dependencies listed in `requirements.txt`.
 
-Instalacion sugerida:
+Suggested installation:
 
 ```bash
 python -m venv .venv
@@ -35,7 +35,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-En Windows:
+On Windows:
 
 ```bash
 python -m venv .venv
@@ -43,9 +43,9 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-## Uso rapido
+## Quick Start
 
-### 1. Segmentar una imagen desde Python
+### 1. Segment an image from Python
 
 ```python
 import cv2
@@ -57,33 +57,33 @@ img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
 mask_bin, labels_ws = segmentar_ameba_completa(img_rgb=img_rgb)
 ```
 
-`mask_bin` contiene la mascara binaria candidata y `labels_ws` contiene los objetos separados por watershed.
+`mask_bin` contains the candidate binary mask and `labels_ws` contains the objects separated by watershed.
 
-### 2. Etiquetar regiones de una carpeta
+### 2. Label regions from a folder
 
 ```bash
 python etiquetar_regiones_carpeta.py images1 etiquetas_regiones_SOMIB.pkl
 ```
 
-Controles de la ventana interactiva:
+Interactive window controls:
 
-- `1`: modo ameba.
-- `0`: modo no ameba.
-- clic izquierdo: etiqueta la region seleccionada.
-- `u`: deshacer ultimo clic.
-- `c`: limpiar etiquetas de la imagen actual.
-- `g`: guardar todas las etiquetas y cerrar.
+- `1`: amoeba mode.
+- `0`: non-amoeba mode.
+- left click: label the selected region.
+- `u`: undo the last click.
+- `c`: clear labels for the current image.
+- `g`: save all labels and close.
 
-### 3. Cargar etiquetas y preparar dataset
+### 3. Load labels and prepare a dataset
 
 ```python
 from etiquetar_regiones_carpeta import cargar_etiquetas, preparar_dataset_segunda_red
 
-datos = cargar_etiquetas("etiquetas_regiones_SOMIB.pkl")
-dataset = preparar_dataset_segunda_red(datos, carpeta="images1", val_frac=0.25, seed=0)
+data = cargar_etiquetas("etiquetas_regiones_SOMIB.pkl")
+dataset = preparar_dataset_segunda_red(data, carpeta="images1", val_frac=0.25, seed=0)
 ```
 
-### 4. Aplicar una segunda red entrenada por objeto
+### 4. Apply a trained second-stage object classifier
 
 ```python
 import cv2
@@ -93,24 +93,24 @@ from Segmentacion_con_filtro import aplicar_segunda_red_por_objeto
 img_bgr = cv2.imread("images1/amoeba_0001.jpg")
 img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
 
-mask_candidata, _ = segmentar_ameba_completa(img_rgb=img_rgb)
-mask_final, labels, predicciones = aplicar_segunda_red_por_objeto(
+candidate_mask, _ = segmentar_ameba_completa(img_rgb=img_rgb)
+final_mask, labels, predictions = aplicar_segunda_red_por_objeto(
     img_rgb,
-    mask_candidata,
+    candidate_mask,
     ruta_pkl="modelo_hlvq_SOMIB.pkl",
 )
 ```
 
-## Flujo de trabajo recomendado
+## Recommended Workflow
 
-1. Colocar imagenes de microscopia en una carpeta local.
-2. Ejecutar `segmentar_ameba_completa` para generar regiones candidatas.
-3. Usar `etiquetar_regiones_carpeta.py` para crear un archivo `.pkl` de etiquetas.
-4. Preparar el dataset con `preparar_dataset_segunda_red`.
-5. Entrenar o ajustar la segunda red con las funciones de `Segmentacion_con_filtro.py`.
-6. Validar resultados visualmente y guardar ejemplos en `processed_images/`.
+1. Place microscopy images in a local folder.
+2. Run `segmentar_ameba_completa` to generate candidate regions.
+3. Use `etiquetar_regiones_carpeta.py` to create a `.pkl` label file.
+4. Prepare the dataset with `preparar_dataset_segunda_red`.
+5. Train or tune the second-stage classifier with the functions in `Segmentacion_con_filtro.py`.
+6. Validate results visually and save examples in `processed_images/`.
 
-## Estructura del repositorio
+## Repository Structure
 
 ```text
 .
@@ -125,12 +125,12 @@ mask_final, labels, predicciones = aplicar_segunda_red_por_objeto(
 `-- README.md
 ```
 
-## Notas
+## Notes
 
-- Los scripts usan `matplotlib` con backend Qt para visualizacion interactiva; en servidores sin interfaz grafica puede ser necesario cambiar el backend o ejecutar solo las partes no interactivas.
-- Las anotaciones generadas (`etiquetas_regiones*.pkl`) se tratan como salidas locales y no se recomiendan para versionar salvo que formen parte del dataset final.
-- `processed_images/` contiene ejemplos utiles para documentar resultados, pero los resultados nuevos pueden regenerarse a partir de `images1/` y los scripts.
+- The scripts use `matplotlib` with the Qt backend for interactive visualization; on headless servers, you may need to change the backend or run only the non-interactive parts.
+- Generated annotation files (`etiquetas_regiones*.pkl`) are treated as local outputs and should not be versioned unless they are part of the final dataset.
+- `processed_images/` contains useful examples for documenting results, but new outputs can be regenerated from `images1/` and the scripts.
 
-## Licencia
+## License
 
-Este proyecto esta publicado bajo licencia MIT. Consulta [LICENSE](LICENSE) para mas detalles.
+This project is released under the MIT License. See [LICENSE](LICENSE) for details.
