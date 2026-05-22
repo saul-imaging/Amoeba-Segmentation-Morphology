@@ -203,6 +203,10 @@ cython_debug/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
+# Project-generated annotation/training outputs
+etiquetas_regiones*.pkl
+modelo_hlvq_objetos.pkl
+
 # Ruff stuff:
 .ruff_cache/
 
