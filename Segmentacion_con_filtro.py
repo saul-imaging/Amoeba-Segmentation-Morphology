@@ -1617,9 +1617,7 @@ def visualizar_predicciones_segunda_red(img_rgb, labels, pred_por_componente):
 # Segmentación nueva
 # =============================================================================
 
-ruta = (
-    r"GAYM_25_07_25-20251219T121604Z-1-001 1/GAYM_25_07_25/images1/ameba2507_0029.jpg"
-)
+ruta = r"images1/ameba2507_0019.jpg"
 
 img_rgb = cv2.imread(ruta)
 

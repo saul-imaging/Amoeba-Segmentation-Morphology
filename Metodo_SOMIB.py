@@ -1,26 +1,15 @@
-import random
-import time
-from pathlib import Path
-
 import matplotlib
-from skimage.segmentation import felzenszwalb
 
 matplotlib.use("Qt5Agg")
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Dict, List
 
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
-from scipy import ndimage as ndi
 from scipy.ndimage import generic_filter
-from scipy.optimize import differential_evolution
-from skimage.feature import graycomatrix, graycoprops, peak_local_max
-from skimage.graph import route_through_array
-from skimage.segmentation import felzenszwalb, watershed
-from tqdm import tqdm
+from skimage.segmentation import watershed
 
 
 class NodoProcesamiento(ABC):
@@ -371,7 +360,6 @@ class Pipeline:
 
     def visualizar(self, cols=4):
         """Muestra todas las etapas del historial."""
-        import matplotlib.pyplot as plt
 
         n = len(self.historial)
         rows = int(np.ceil(n / cols))
@@ -902,354 +890,230 @@ def watershed_por_islas(mask_bin, imagen_gris, dist_thresh=0.35, min_area_isla=5
     return labels_finales
 
 
-imagen_col = cv2.imread(
-    "GAYM_25_07_25-20251219T121604Z-1-001 1/GAYM_25_07_25/images1/ameba2507_0080.jpg"
-)
-
-imagen = cv2.cvtColor(imagen_col, cv2.COLOR_BGR2GRAY)
-
-# ============================================================
-# 1. FFT
-# ============================================================
-
-image_fft = np.fft.fftshift(np.fft.fft2(imagen))
-magnitude_fft = np.log(np.abs(image_fft) + 1)
-
-rows, cols = imagen.shape
-center_row, center_col = rows // 2, cols // 2
-
-fc_2 = 90
-
-Y, X = np.ogrid[:rows, :cols]
-distancia_al_centro = np.sqrt((X - center_col) ** 2 + (Y - center_row) ** 2)
-
-# ============================================================
-# 2. High-pass filter
-# ============================================================
-
-filtro_hp = (distancia_al_centro >= fc_2).astype(np.float32)
-
-convolucion_hp = filtro_hp * image_fft
-magnitude_hp = np.log(np.abs(convolucion_hp) + 1)
-
-real_hp = np.fft.ifft2(np.fft.ifftshift(convolucion_hp))
-img_new_hp = np.abs(real_hp)
-
-# ============================================================
-# 3. Normalization + Otsu thresholding
-# ============================================================
-
-img_normalizada = cv2.normalize(img_new_hp, None, 0, 255, cv2.NORM_MINMAX).astype(
-    np.uint8
-)
-
-_, mask_o = cv2.threshold(img_normalizada, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-
-# ============================================================
-# 4. Morphological closing
-# ============================================================
-
-kernel = np.ones((3, 3), np.uint8)
-
-mask_cerrada = cv2.dilate(mask_o, kernel, iterations=2)
-mask_cerrada = cv2.morphologyEx(mask_cerrada, cv2.MORPH_CLOSE, kernel, iterations=1)
-
-# ============================================================
-# 5. Island processing
-# ============================================================
-
-resultados_islas, mapas_globales, labels = procesar_todas_las_islas(
-    img_filtrada=img_new_hp,
-    mask_bin=mask_cerrada,
+def segmentar_ameba_completa(
+    img_rgb=None,
+    ruta_imagen=None,
+    fc_2=90,
     padding=8,
     area_min=20,
     k_small=5,
     k_large=13,
-)
+    dist_thresh=0.5,
+    min_area_isla=50,
+    usar_imagen_filtrada_en_watershed=True,
+    return_debug=False,
+):
+    """
+    Segmentación SOMIB completa.
 
-ent_map = mapas_globales["entropia_13"]
+    Entrada
+    -------
+    img_rgb : np.ndarray, opcional
+        Imagen RGB. Es la forma recomendada para usarla desde:
+        - etiquetar_regiones_carpeta.py
+        - Segmentacion_con_filtro.py
 
-# ============================================================
-# 6. Two-maximum mask
-# ============================================================
+    ruta_imagen : str, opcional
+        Ruta de imagen. Útil para pruebas directas desde Metodo_SOMIB.py.
 
-mask_bin = mascara_dos_maximos(ent_map)
+    Parámetros principales
+    ----------------------
+    fc_2 : int
+        Radio de corte del filtro pasa-altas en frecuencia.
 
-# ============================================================
-# 7. Adaptive preprocessing pipeline
-# ============================================================
+    padding : int
+        Padding usado al procesar islas.
 
-diag = analizar_imagen(imagen)
-img_procesada, diag, _ = decidir_pipeline(diag, imagen, guardar_historial=False)
+    area_min : int
+        Área mínima para procesar islas candidatas en la etapa de entropía.
 
-# ============================================================
-# 8. Final masked image
-# ============================================================
+    k_small : int
+        Kernel pequeño reservado para compatibilidad.
 
-img_final = img_procesada * mask_bin
+    k_large : int
+        Kernel grande usado en el mapa de entropía local.
 
-# ============================================================
-# 9. Watershed segmentation
-# ============================================================
+    dist_thresh : float
+        Umbral relativo para watershed por isla.
 
-labels_ws = watershed_por_islas(
-    mask_bin=mask_bin, imagen_gris=img_final, dist_thresh=0.5
-)
+    min_area_isla : int
+        Área mínima de isla para watershed.
 
-# ============================================================
-# 10. Show selected phases in one figure
-# ============================================================
+    usar_imagen_filtrada_en_watershed : bool
+        Si True, watershed usa img_final = img_procesada * mask_bin.
+        Si False, watershed usa la imagen gris original.
 
-fig, axes = plt.subplots(2, 4, figsize=(22, 9))
-axes = axes.ravel()
+    return_debug : bool
+        Si True, devuelve también un diccionario con imágenes intermedias.
 
-phases = [
-    ("(A) Original Grayscale Image", imagen, "gray"),
-    # ("FFT Magnitude Spectrum", magnitude_fft, "gray"),
-    ("(B) Filtered FFT Spectrum", magnitude_hp, "gray"),
-    ("(C) High-Pass Filtered Image", img_new_hp, "gray"),
-    ("(D) Otsu Threshold Mask", mask_o, "gray"),
-    ("(E) Closed Binary Mask", mask_cerrada, "gray"),
-    ("(F) Entropy Map", ent_map, "inferno"),
-    # ("G-Adaptive Processed Image", img_procesada, "gray"),
-    ("(G) Final Masked Image", img_final, "gray"),
-    ("(H) Watershed Labels", labels_ws, "nipy_spectral"),
-]
+    Retorna
+    -------
+    mask_bin : np.ndarray uint8
+        Máscara binaria candidata, valores 0/1.
 
-for ax, (title, img, cmap) in zip(axes, phases):
-    ax.imshow(img, cmap=cmap)
-    ax.set_title(title, fontsize=11)
-    ax.axis("off")
+    labels_ws : np.ndarray int32
+        Labels finales separados por watershed.
+        Fondo = 0, objetos = 1, 2, 3, ...
 
-plt.tight_layout()
-plt.show()
-#
-#
-# def segmentar_ameba_completa(
-#     img_rgb=None,
-#     ruta_imagen=None,
-#     fc_2=90,
-#     padding=8,
-#     area_min=20,
-#     k_small=5,
-#     k_large=13,
-#     dist_thresh=0.5,
-#     min_area_isla=50,
-#     usar_imagen_filtrada_en_watershed=True,
-#     return_debug=False,
-# ):
-#     """
-#     Segmentación SOMIB completa.
-#
-#     Entrada
-#     -------
-#     img_rgb : np.ndarray, opcional
-#         Imagen RGB. Es la forma recomendada para usarla desde:
-#         - etiquetar_regiones_carpeta.py
-#         - Segmentacion_con_filtro.py
-#
-#     ruta_imagen : str, opcional
-#         Ruta de imagen. Útil para pruebas directas desde Metodo_SOMIB.py.
-#
-#     Parámetros principales
-#     ----------------------
-#     fc_2 : int
-#         Radio de corte del filtro pasa-altas en frecuencia.
-#
-#     padding : int
-#         Padding usado al procesar islas.
-#
-#     area_min : int
-#         Área mínima para procesar islas candidatas en la etapa de entropía.
-#
-#     k_small : int
-#         Kernel pequeño reservado para compatibilidad.
-#
-#     k_large : int
-#         Kernel grande usado en el mapa de entropía local.
-#
-#     dist_thresh : float
-#         Umbral relativo para watershed por isla.
-#
-#     min_area_isla : int
-#         Área mínima de isla para watershed.
-#
-#     usar_imagen_filtrada_en_watershed : bool
-#         Si True, watershed usa img_final = img_procesada * mask_bin.
-#         Si False, watershed usa la imagen gris original.
-#
-#     return_debug : bool
-#         Si True, devuelve también un diccionario con imágenes intermedias.
-#
-#     Retorna
-#     -------
-#     mask_bin : np.ndarray uint8
-#         Máscara binaria candidata, valores 0/1.
-#
-#     labels_ws : np.ndarray int32
-#         Labels finales separados por watershed.
-#         Fondo = 0, objetos = 1, 2, 3, ...
-#
-#     debug : dict, opcional
-#         Solo si return_debug=True.
-#     """
-#
-#     # =========================================================
-#     # 1) Cargar / validar imagen
-#     # =========================================================
-#     if img_rgb is None and ruta_imagen is None:
-#         raise ValueError("Debes proporcionar img_rgb o ruta_imagen.")
-#
-#     if img_rgb is None:
-#         imagen_col = cv2.imread(str(ruta_imagen))
-#         if imagen_col is None:
-#             raise FileNotFoundError(f"No se pudo leer la imagen: {ruta_imagen}")
-#
-#         # cv2 lee BGR; convertimos a RGB para mantener compatibilidad.
-#         img_rgb = cv2.cvtColor(imagen_col, cv2.COLOR_BGR2RGB)
-#
-#     if img_rgb is None:
-#         raise ValueError("No se recibió una imagen válida.")
-#
-#     if img_rgb.ndim == 2:
-#         imagen = img_rgb.astype(np.uint8)
-#     elif img_rgb.ndim == 3:
-#         # Tus otros scripts pasan img_rgb, por eso usamos RGB2GRAY.
-#         imagen = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
-#     else:
-#         raise ValueError(f"Formato de imagen no soportado: shape={img_rgb.shape}")
-#
-#     imagen = imagen.astype(np.uint8)
-#
-#     # =========================================================
-#     # 2) Filtro pasa-altas en frecuencia
-#     # =========================================================
-#     image_fft = np.fft.fftshift(np.fft.fft2(imagen))
-#
-#     rows, cols = imagen.shape
-#     center_row, center_col = rows // 2, cols // 2
-#
-#     Y, X = np.ogrid[:rows, :cols]
-#     distancia_al_centro = np.sqrt((X - center_col) ** 2 + (Y - center_row) ** 2)
-#
-#     filtro_hp = (distancia_al_centro >= fc_2).astype(np.float32)
-#
-#     convolucion_hp = filtro_hp * image_fft
-#     real_hp = np.fft.ifft2(np.fft.ifftshift(convolucion_hp))
-#     img_new_hp = np.abs(real_hp)
-#
-#     img_normalizada = cv2.normalize(img_new_hp, None, 0, 255, cv2.NORM_MINMAX).astype(
-#         np.uint8
-#     )
-#
-#     # =========================================================
-#     # 3) Otsu + cierre morfológico
-#     # =========================================================
-#     _, mask_o = cv2.threshold(
-#         img_normalizada, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-#     )
-#
-#     kernel = np.ones((3, 3), np.uint8)
-#
-#     mask_cerrada = cv2.dilate(mask_o, kernel, iterations=2)
-#     mask_cerrada = cv2.morphologyEx(mask_cerrada, cv2.MORPH_CLOSE, kernel, iterations=1)
-#
-#     # =========================================================
-#     # 4) Procesamiento por islas + mapa de entropía
-#     # =========================================================
-#     resultados_islas, mapas_globales, labels_iniciales = procesar_todas_las_islas(
-#         img_filtrada=img_normalizada,
-#         mask_bin=mask_cerrada,
-#         padding=padding,
-#         area_min=area_min,
-#         k_small=k_small,
-#         k_large=k_large,
-#     )
-#
-#     ent_map = mapas_globales["entropia_13"]
-#
-#     # Máscara por los dos máximos de entropía.
-#     # Se fuerza ent_map > 0 para evitar que el fondo entre como candidato
-#     # cuando el mapa tenga muchos ceros.
-#     mask_bin = mascara_dos_maximos(ent_map)
-#     mask_bin = ((mask_bin > 0) & (ent_map > 0)).astype(np.uint8)
-#
-#     # Si no hay candidatos, devolver vacío sin romper el pipeline.
-#     if np.sum(mask_bin) == 0:
-#         labels_ws = np.zeros_like(mask_bin, dtype=np.int32)
-#
-#         if return_debug:
-#             debug = {
-#                 "imagen_gray": imagen,
-#                 "image_fft": image_fft,
-#                 "filtro_hp": filtro_hp,
-#                 "img_new_hp": img_new_hp,
-#                 "img_normalizada": img_normalizada,
-#                 "mask_o": mask_o,
-#                 "mask_cerrada": mask_cerrada,
-#                 "ent_map": ent_map,
-#                 "labels_iniciales": labels_iniciales,
-#                 "resultados_islas": resultados_islas,
-#                 "img_procesada": imagen,
-#                 "img_final": imagen * mask_bin,
-#             }
-#             return mask_bin, labels_ws, debug
-#
-#         return mask_bin, labels_ws
-#
-#     # =========================================================
-#     # 5) Diagnóstico + filtrado adaptativo
-#     # =========================================================
-#     diag = analizar_imagen(imagen)
-#     img_procesada, diag, _ = decidir_pipeline(
-#         diag,
-#         imagen,
-#         guardar_historial=False,
-#     )
-#
-#     if usar_imagen_filtrada_en_watershed:
-#         img_final = img_procesada.astype(np.float32) * mask_bin.astype(np.float32)
-#         img_final = cv2.normalize(img_final, None, 0, 255, cv2.NORM_MINMAX).astype(
-#             np.uint8
-#         )
-#         imagen_watershed = img_final
-#     else:
-#         img_final = imagen.astype(np.float32) * mask_bin.astype(np.float32)
-#         img_final = cv2.normalize(img_final, None, 0, 255, cv2.NORM_MINMAX).astype(
-#             np.uint8
-#         )
-#         imagen_watershed = imagen
-#
-#     # =========================================================
-#     # 6) Watershed por islas
-#     # =========================================================
-#     labels_ws = watershed_por_islas(
-#         mask_bin=mask_bin,
-#         imagen_gris=imagen_watershed,
-#         dist_thresh=dist_thresh,
-#         min_area_isla=min_area_isla,
-#     )
-#
-#     labels_ws = labels_ws.astype(np.int32)
-#
-#     if return_debug:
-#         debug = {
-#             "imagen_gray": imagen,
-#             "image_fft": image_fft,
-#             "filtro_hp": filtro_hp,
-#             "img_new_hp": img_new_hp,
-#             "img_normalizada": img_normalizada,
-#             "mask_o": mask_o,
-#             "mask_cerrada": mask_cerrada,
-#             "ent_map": ent_map,
-#             "labels_iniciales": labels_iniciales,
-#             "resultados_islas": resultados_islas,
-#             "diag": diag,
-#             "img_procesada": img_procesada,
-#             "img_final": img_final,
-#             "imagen_watershed": imagen_watershed,
-#         }
-#         return mask_bin, labels_ws, debug
-#
-#     return mask_bin, labels_ws, img_procesada
-#
+    debug : dict, opcional
+        Solo si return_debug=True.
+    """
+
+    # =========================================================
+    # 1) Cargar / validar imagen
+    # =========================================================
+    if img_rgb is None and ruta_imagen is None:
+        raise ValueError("Debes proporcionar img_rgb o ruta_imagen.")
+
+    if img_rgb is None:
+        imagen_col = cv2.imread(str(ruta_imagen))
+        if imagen_col is None:
+            raise FileNotFoundError(f"No se pudo leer la imagen: {ruta_imagen}")
+
+        # cv2 lee BGR; convertimos a RGB para mantener compatibilidad.
+        img_rgb = cv2.cvtColor(imagen_col, cv2.COLOR_BGR2RGB)
+
+    if img_rgb is None:
+        raise ValueError("No se recibió una imagen válida.")
+
+    if img_rgb.ndim == 2:
+        imagen = img_rgb.astype(np.uint8)
+    elif img_rgb.ndim == 3:
+        # Tus otros scripts pasan img_rgb, por eso usamos RGB2GRAY.
+        imagen = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+    else:
+        raise ValueError(f"Formato de imagen no soportado: shape={img_rgb.shape}")
+
+    imagen = imagen.astype(np.uint8)
+
+    # =========================================================
+    # 2) Filtro pasa-altas en frecuencia
+    # =========================================================
+    image_fft = np.fft.fftshift(np.fft.fft2(imagen))
+
+    rows, cols = imagen.shape
+    center_row, center_col = rows // 2, cols // 2
+
+    Y, X = np.ogrid[:rows, :cols]
+    distancia_al_centro = np.sqrt((X - center_col) ** 2 + (Y - center_row) ** 2)
+
+    filtro_hp = (distancia_al_centro >= fc_2).astype(np.float32)
+
+    convolucion_hp = filtro_hp * image_fft
+    real_hp = np.fft.ifft2(np.fft.ifftshift(convolucion_hp))
+    img_new_hp = np.abs(real_hp)
+
+    img_normalizada = cv2.normalize(img_new_hp, None, 0, 255, cv2.NORM_MINMAX).astype(
+        np.uint8
+    )
+
+    # =========================================================
+    # 3) Otsu + cierre morfológico
+    # =========================================================
+    _, mask_o = cv2.threshold(
+        img_normalizada, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+    )
+
+    kernel = np.ones((3, 3), np.uint8)
+
+    mask_cerrada = cv2.dilate(mask_o, kernel, iterations=2)
+    mask_cerrada = cv2.morphologyEx(mask_cerrada, cv2.MORPH_CLOSE, kernel, iterations=1)
+
+    # =========================================================
+    # 4) Procesamiento por islas + mapa de entropía
+    # =========================================================
+    resultados_islas, mapas_globales, labels_iniciales = procesar_todas_las_islas(
+        img_filtrada=img_normalizada,
+        mask_bin=mask_cerrada,
+        padding=padding,
+        area_min=area_min,
+        k_small=k_small,
+        k_large=k_large,
+    )
+
+    ent_map = mapas_globales["entropia_13"]
+
+    # Máscara por los dos máximos de entropía.
+    # Se fuerza ent_map > 0 para evitar que el fondo entre como candidato
+    # cuando el mapa tenga muchos ceros.
+    mask_bin = mascara_dos_maximos(ent_map)
+    mask_bin = ((mask_bin > 0) & (ent_map > 0)).astype(np.uint8)
+
+    # Si no hay candidatos, devolver vacío sin romper el pipeline.
+    if np.sum(mask_bin) == 0:
+        labels_ws = np.zeros_like(mask_bin, dtype=np.int32)
+
+        if return_debug:
+            debug = {
+                "imagen_gray": imagen,
+                "image_fft": image_fft,
+                "filtro_hp": filtro_hp,
+                "img_new_hp": img_new_hp,
+                "img_normalizada": img_normalizada,
+                "mask_o": mask_o,
+                "mask_cerrada": mask_cerrada,
+                "ent_map": ent_map,
+                "labels_iniciales": labels_iniciales,
+                "resultados_islas": resultados_islas,
+                "img_procesada": imagen,
+                "img_final": imagen * mask_bin,
+            }
+            return mask_bin, labels_ws, debug
+
+        return mask_bin, labels_ws
+
+    # =========================================================
+    # 5) Diagnóstico + filtrado adaptativo
+    # =========================================================
+    diag = analizar_imagen(imagen)
+    img_procesada, diag, _ = decidir_pipeline(
+        diag,
+        imagen,
+        guardar_historial=False,
+    )
+
+    if usar_imagen_filtrada_en_watershed:
+        img_final = img_procesada.astype(np.float32) * mask_bin.astype(np.float32)
+        img_final = cv2.normalize(img_final, None, 0, 255, cv2.NORM_MINMAX).astype(
+            np.uint8
+        )
+        imagen_watershed = img_final
+    else:
+        img_final = imagen.astype(np.float32) * mask_bin.astype(np.float32)
+        img_final = cv2.normalize(img_final, None, 0, 255, cv2.NORM_MINMAX).astype(
+            np.uint8
+        )
+        imagen_watershed = imagen
+
+    # =========================================================
+    # 6) Watershed por islas
+    # =========================================================
+    labels_ws = watershed_por_islas(
+        mask_bin=mask_bin,
+        imagen_gris=imagen_watershed,
+        dist_thresh=dist_thresh,
+        min_area_isla=min_area_isla,
+    )
+
+    labels_ws = labels_ws.astype(np.int32)
+
+    if return_debug:
+        debug = {
+            "imagen_gray": imagen,
+            "image_fft": image_fft,
+            "filtro_hp": filtro_hp,
+            "img_new_hp": img_new_hp,
+            "img_normalizada": img_normalizada,
+            "mask_o": mask_o,
+            "mask_cerrada": mask_cerrada,
+            "ent_map": ent_map,
+            "labels_iniciales": labels_iniciales,
+            "resultados_islas": resultados_islas,
+            "diag": diag,
+            "img_procesada": img_procesada,
+            "img_final": img_final,
+            "imagen_watershed": imagen_watershed,
+        }
+        return mask_bin, labels_ws, debug
+
+    return mask_bin, labels_ws, img_procesada
