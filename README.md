@@ -12,7 +12,18 @@ Image processing pipeline for amoeba segmentation in microscopy images. The proj
 
 This repository is prepared for publication on GitHub as supporting material for the SOMIB conference. The code and examples document the workflow used for amoeba segmentation in microscopy images.
 
-The microscopy images used in this project were acquired at ESM, in the postgraduate Laboratory of Immunology of Infectious Diseases. The full image dataset is not distributed through this repository while sharing permissions are being confirmed; this note will be updated once the corresponding authorization is defined.
+## Authors and Affiliation
+
+- Alvaro Anzueto Rios
+- Estefania Figueroa Acevedo
+- Saul Edwin Cordova Luria
+- Rafael Santiago Godoy
+
+All authors are affiliated with IPN UPIITA, Biomechanics Laboratory.
+
+## Data Availability
+
+The microscopy images were acquired at ESM, in the Laboratory of Immunology of Infectious Diseases. A complete dataset exists, but this repository uses only one batch of images for the experiments and examples shown here. Additional data are not distributed through this repository while sharing permissions are being confirmed; this note will be updated once the corresponding authorization is defined.
 
 ## Method Overview
 
