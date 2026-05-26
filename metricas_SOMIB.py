@@ -679,9 +679,7 @@ def tabla_variacion_features_regiones(df_features, feature_names=None):
         n0 = len(x0)
         n1 = len(x1)
         if n0 + n1 > 2:
-            pooled_var = ((n0 - 1) * std_0**2 + (n1 - 1) * std_1**2) / (
-                n0 + n1 - 2
-            )
+            pooled_var = ((n0 - 1) * std_0**2 + (n1 - 1) * std_1**2) / (n0 + n1 - 2)
             pooled_std = float(np.sqrt(max(pooled_var, 0.0)))
         else:
             pooled_std = 0.0
@@ -884,7 +882,7 @@ def graficar_importancia_features_regiones(
 
 def analizar_variacion_importancia_features_regiones(
     ruta_etiquetas="../etiquetas_regiones_SOMIB.pkl",
-    carpeta_imagenes="../GAYM_25_07_25-20251219T121604Z-1-001 1/GAYM_25_07_25/images1",
+    carpeta_imagenes="full_dataset",
     carpeta_salida="tablas_features",
     carpeta_figuras="figuras_metricas",
     guardar_csv=True,
@@ -1439,7 +1437,7 @@ if __name__ == "__main__":
         carpeta_features = (
             sys.argv[3]
             if len(sys.argv) > 3
-            else "../GAYM_25_07_25-20251219T121604Z-1-001 1/GAYM_25_07_25/images1"
+            else "full_dataset"
         )
 
         analizar_variacion_importancia_features_regiones(
@@ -1454,7 +1452,7 @@ if __name__ == "__main__":
         raise SystemExit(0)
 
     # Cambia esta ruta por la carpeta real de tus imágenes
-    carpeta_imagenes = r"GAYM_25_07_25-20251219T121604Z-1-001 1/GAYM_25_07_25/images1"
+    carpeta_imagenes = "full_dataset"
 
     # Carpeta donde se guardarán las imágenes procesadas
     carpeta_imagenes_procesadas = "imagenes_procesadas"
